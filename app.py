@@ -32,11 +32,9 @@ if not os.path.exists(DATABASE):
 @app.route('/', methods=['GET', 'POST'])
 def index():
     db = get_db()
-    
     if request.method == 'POST':
         title = request.form['title']
         if title:
-            # Note: We temporarily hardcode user_id 1 until user authentication is added
             db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (1, title))
             db.commit()
         return redirect(url_for('index'))
@@ -44,6 +42,23 @@ def index():
     cursor = db.execute('SELECT * FROM movies')
     movies = cursor.fetchall()
     return render_template('index.html', movies=movies)
+
+@app.route('/delete/<int:movie_id>', methods=['POST'])
+def delete_movie(movie_id):
+    db = get_db()
+    db.execute('DELETE FROM movies WHERE id = ?', (movie_id,))
+    db.commit()
+    return redirect(url_for('index'))
+
+@app.route('/toggle/<int:movie_id>', methods=['POST'])
+def toggle_status(movie_id):
+    db = get_db()
+    movie = db.execute('SELECT status FROM movies WHERE id = ?', (movie_id,)).fetchone()
+    if movie:
+        new_status = 'Watched' if movie['status'] == 'To Watch' else 'To Watch'
+        db.execute('UPDATE movies SET status = ? WHERE id = ?', (new_status, movie_id))
+        db.commit()
+    return redirect(url_for('index'))
 
 if __name__ == '__main__':
     app.run(debug=True)
