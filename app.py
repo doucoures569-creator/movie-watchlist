@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, g, render_template, request, redirect, url_for
 import sqlite3
 import os
@@ -26,8 +27,19 @@ def init_db():
             db.cursor().executescript(f.read())
         db.commit()
 
+def upgrade_db():
+    with app.app_context():
+        db = get_db()
+        try:
+            db.execute('ALTER TABLE movies ADD COLUMN rating INTEGER DEFAULT 0')
+            db.commit()
+        except sqlite3.OperationalError:
+            pass
+
 if not os.path.exists(DATABASE):
     init_db()
+else:
+    upgrade_db()
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -57,6 +69,15 @@ def toggle_status(movie_id):
     if movie:
         new_status = 'Watched' if movie['status'] == 'To Watch' else 'To Watch'
         db.execute('UPDATE movies SET status = ? WHERE id = ?', (new_status, movie_id))
+        db.commit()
+    return redirect(url_for('index'))
+
+@app.route('/rate/<int:movie_id>', methods=['POST'])
+def rate_movie(movie_id):
+    rating = request.form.get('rating')
+    if rating and rating.isdigit() and 1 <= int(rating) <= 5:
+        db = get_db()
+        db.execute('UPDATE movies SET rating = ? WHERE id = ?', (int(rating), movie_id))
         db.commit()
     return redirect(url_for('index'))
 
