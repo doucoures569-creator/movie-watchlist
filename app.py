@@ -1,9 +1,9 @@
-from flask import Flask, g
+from flask import Flask, g, render_template, request, redirect, url_for
 import sqlite3
+import os
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_sessions'
-
 DATABASE = 'database.sqlite3'
 
 def get_db():
@@ -26,9 +26,24 @@ def init_db():
             db.cursor().executescript(f.read())
         db.commit()
 
-@app.route('/')
+if not os.path.exists(DATABASE):
+    init_db()
+
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    return "The Movie Watchlist application is ready!"
+    db = get_db()
+    
+    if request.method == 'POST':
+        title = request.form['title']
+        if title:
+            # Note: We temporarily hardcode user_id 1 until user authentication is added
+            db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (1, title))
+            db.commit()
+        return redirect(url_for('index'))
+        
+    cursor = db.execute('SELECT * FROM movies')
+    movies = cursor.fetchall()
+    return render_template('index.html', movies=movies)
 
 if __name__ == '__main__':
     app.run(debug=True)
