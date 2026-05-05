@@ -26,6 +26,9 @@
         .status { font-size: 0.8em; color: #666; }
         .watched .title { text-decoration: line-through; color: #888; }
         select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        .filters { display: flex; gap: 10px; justify-content: center; margin-bottom: 20px; }
+        .filters a { text-decoration: none; padding: 8px 15px; background-color: #e2e3e5; color: #383d41; border-radius: 4px; }
+        .filters a.active { background-color: #007bff; color: white; }
     </style>
 </head>
 <body>
@@ -36,6 +39,12 @@
         <input type="text" name="title" placeholder="Add a new movie..." required>
         <button class="add-btn" type="submit">Add</button>
     </form>
+
+    <div class="filters">
+        <a href="/" class="{% if not current_filter %}active{% endif %}">All</a>
+        <a href="/?filter=To Watch" class="{% if current_filter == 'To Watch' %}active{% endif %}">To Watch</a>
+        <a href="/?filter=Watched" class="{% if current_filter == 'Watched' %}active{% endif %}">Watched</a>
+    </div>
 
     <ul>
         {% for movie in movies %}
@@ -64,7 +73,7 @@
                 </div>
             </li>
         {% else %}
-            <li>Your watchlist is empty. Add a movie above!</li>
+            <li>Your watchlist is empty or no movies match the filter.</li>
         {% endfor %}
     </ul>
 
