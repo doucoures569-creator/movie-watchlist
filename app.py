@@ -1,5 +1,6 @@
 # app.py
-from flask import Flask, g, render_template, request, redirect, url_for
+from flask import Flask, g, render_template, request, redirect, url_for, session, flash
+from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
 
@@ -20,36 +21,111 @@ def close_connection(exception):
     if db is not None:
         db.close()
 
+def init_db():
+    with app.app_context():
+        db = get_db()
+        with open('schema.sql', mode='r') as f:
+            db.cursor().executescript(f.read())
+        db.commit()
+
+if not os.path.exists(DATABASE):
+    init_db()
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        db = get_db()
+        error = None
+
+        if not username or not password:
+            error = 'Username and password are required.'
+        else:
+            try:
+                db.execute(
+                    "INSERT INTO users (username, password) VALUES (?, ?)",
+                    (username, generate_password_hash(password)),
+                )
+                db.commit()
+                return redirect(url_for('login'))
+            except sqlite3.IntegrityError:
+                error = f"User {username} is already registered."
+
+        if error:
+            flash(error)
+
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        db = get_db()
+        error = None
+        user = db.execute(
+            'SELECT * FROM users WHERE username = ?', (username,)
+        ).fetchone()
+
+        if user is None:
+            error = 'Incorrect username.'
+        elif not check_password_hash(user['password'], password):
+            error = 'Incorrect password.'
+
+        if error is None:
+            session.clear()
+            session['user_id'] = user['id']
+            return redirect(url_for('index'))
+
+        flash(error)
+
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
 @app.route('/', methods=['GET', 'POST'])
 def index():
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+
     db = get_db()
+    user_id = session['user_id']
+
     if request.method == 'POST':
         title = request.form['title']
         if title:
-            db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (1, title))
+            db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (user_id, title))
             db.commit()
         return redirect(url_for('index'))
 
     filter_status = request.args.get('filter')
     if filter_status in ['Watched', 'To Watch']:
-        cursor = db.execute('SELECT * FROM movies WHERE status = ?', (filter_status,))
+        cursor = db.execute('SELECT * FROM movies WHERE user_id = ? AND status = ?', (user_id, filter_status))
     else:
-        cursor = db.execute('SELECT * FROM movies')
+        cursor = db.execute('SELECT * FROM movies WHERE user_id = ?', (user_id,))
         
     movies = cursor.fetchall()
     return render_template('index.html', movies=movies, current_filter=filter_status)
 
 @app.route('/delete/<int:movie_id>', methods=['POST'])
 def delete_movie(movie_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     db = get_db()
-    db.execute('DELETE FROM movies WHERE id = ?', (movie_id,))
+    db.execute('DELETE FROM movies WHERE id = ? AND user_id = ?', (movie_id, session['user_id']))
     db.commit()
     return redirect(url_for('index'))
 
 @app.route('/toggle/<int:movie_id>', methods=['POST'])
 def toggle_status(movie_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     db = get_db()
-    movie = db.execute('SELECT status FROM movies WHERE id = ?', (movie_id,)).fetchone()
+    movie = db.execute('SELECT status FROM movies WHERE id = ? AND user_id = ?', (movie_id, session['user_id'])).fetchone()
     if movie:
         new_status = 'Watched' if movie['status'] == 'To Watch' else 'To Watch'
         db.execute('UPDATE movies SET status = ? WHERE id = ?', (new_status, movie_id))
@@ -58,10 +134,12 @@ def toggle_status(movie_id):
 
 @app.route('/rate/<int:movie_id>', methods=['POST'])
 def rate_movie(movie_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
     rating = request.form.get('rating')
     if rating and rating.isdigit() and 1 <= int(rating) <= 5:
         db = get_db()
-        db.execute('UPDATE movies SET rating = ? WHERE id = ?', (int(rating), movie_id))
+        db.execute('UPDATE movies SET rating = ? WHERE id = ? AND user_id = ?', (int(rating), movie_id, session['user_id']))
         db.commit()
     return redirect(url_for('index'))
 
