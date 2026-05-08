@@ -3,6 +3,7 @@ from flask import Flask, g, render_template, request, redirect, url_for, session
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
 import os
+from logic import is_valid_title, is_valid_rating
 
 app = Flask(__name__)
 app.secret_key = 'super_secret_key_for_sessions'
@@ -97,8 +98,8 @@ def index():
 
     if request.method == 'POST':
         title = request.form['title']
-        if title:
-            db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (user_id, title))
+        if is_valid_title(title):
+            db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (user_id, title.strip()))
             db.commit()
         return redirect(url_for('index'))
 
@@ -137,7 +138,7 @@ def rate_movie(movie_id):
     if 'user_id' not in session:
         return redirect(url_for('login'))
     rating = request.form.get('rating')
-    if rating and rating.isdigit() and 1 <= int(rating) <= 5:
+    if is_valid_rating(rating):
         db = get_db()
         db.execute('UPDATE movies SET rating = ? WHERE id = ? AND user_id = ?', (int(rating), movie_id, session['user_id']))
         db.commit()
