@@ -1,4 +1,3 @@
-# app.py
 from flask import Flask, g, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash
 import sqlite3
@@ -39,23 +38,18 @@ def register():
         password = request.form['password']
         db = get_db()
         error = None
-
         if not username or not password:
             error = 'Username and password are required.'
         else:
             try:
-                db.execute(
-                    "INSERT INTO users (username, password) VALUES (?, ?)",
-                    (username, generate_password_hash(password)),
-                )
+                db.execute("INSERT INTO users (username, password) VALUES (?, ?)",
+                    (username, generate_password_hash(password)))
                 db.commit()
                 return redirect(url_for('login'))
             except sqlite3.IntegrityError:
                 error = f"User {username} is already registered."
-
         if error:
             flash(error)
-
     return render_template('register.html')
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -64,23 +58,14 @@ def login():
         username = request.form['username']
         password = request.form['password']
         db = get_db()
-        error = None
-        user = db.execute(
-            'SELECT * FROM users WHERE username = ?', (username,)
-        ).fetchone()
-
-        if user is None:
-            error = 'Incorrect username.'
-        elif not check_password_hash(user['password'], password):
-            error = 'Incorrect password.'
-
-        if error is None:
+        user = db.execute('SELECT * FROM users WHERE username = ?', (username,)).fetchone()
+        if user is None or not check_password_hash(user['password'], password):
+            flash('Incorrect username or password.')
+        else:
             session.clear()
             session['user_id'] = user['id']
+            session['username'] = user['username']
             return redirect(url_for('index'))
-
-        flash(error)
-
     return render_template('login.html')
 
 @app.route('/logout')
@@ -92,25 +77,37 @@ def logout():
 def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-
     db = get_db()
     user_id = session['user_id']
-
     if request.method == 'POST':
         title = request.form['title']
         if is_valid_title(title):
             db.execute('INSERT INTO movies (user_id, title) VALUES (?, ?)', (user_id, title.strip()))
             db.commit()
         return redirect(url_for('index'))
-
+    
     filter_status = request.args.get('filter')
     if filter_status in ['Watched', 'To Watch']:
-        cursor = db.execute('SELECT * FROM movies WHERE user_id = ? AND status = ?', (user_id, filter_status))
+        movies = db.execute('SELECT * FROM movies WHERE user_id = ? AND status = ?', (user_id, filter_status)).fetchall()
     else:
-        cursor = db.execute('SELECT * FROM movies WHERE user_id = ?', (user_id,))
+        movies = db.execute('SELECT * FROM movies WHERE user_id = ?', (user_id,)).fetchall()
         
-    movies = cursor.fetchall()
-    return render_template('index.html', movies=movies, current_filter=filter_status)
+    return render_template('index.html', movies=movies, current_filter=filter_status, username=session.get('username'))
+
+@app.route('/update_details/<int:movie_id>', methods=['POST'])
+def update_details(movie_id):
+    if 'user_id' not in session:
+        return redirect(url_for('login'))
+    db = get_db()
+    rating = request.form.get('rating')
+    review = request.form.get('review')
+    watched_at = request.form.get('watched_at')
+    
+    db.execute('''UPDATE movies SET rating = ?, review = ?, watched_at = ? 
+                  WHERE id = ? AND user_id = ?''', 
+               (rating, review, watched_at, movie_id, session['user_id']))
+    db.commit()
+    return redirect(url_for('index'))
 
 @app.route('/delete/<int:movie_id>', methods=['POST'])
 def delete_movie(movie_id):
@@ -130,17 +127,6 @@ def toggle_status(movie_id):
     if movie:
         new_status = 'Watched' if movie['status'] == 'To Watch' else 'To Watch'
         db.execute('UPDATE movies SET status = ? WHERE id = ?', (new_status, movie_id))
-        db.commit()
-    return redirect(url_for('index'))
-
-@app.route('/rate/<int:movie_id>', methods=['POST'])
-def rate_movie(movie_id):
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    rating = request.form.get('rating')
-    if is_valid_rating(rating):
-        db = get_db()
-        db.execute('UPDATE movies SET rating = ? WHERE id = ? AND user_id = ?', (int(rating), movie_id, session['user_id']))
         db.commit()
     return redirect(url_for('index'))
 
